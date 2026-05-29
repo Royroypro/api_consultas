@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -13,73 +15,124 @@ type ExternalAPIService interface {
 	QueryRUC(ctx context.Context, ruc string) (json.RawMessage, error)
 }
 
-type UnifiedAPIService struct {
-	apiPeruKey   string
-	decolectaKey string
-	client       *http.Client
+type providerConfig struct {
+	name     string
+	apiKey   string
+	priority int
+	isActive bool
 }
 
-func NewUnifiedAPIService(apiPeruKey, decolectaKey string) *UnifiedAPIService {
+type UnifiedAPIService struct {
+	db     *sql.DB
+	client *http.Client
+}
+
+func NewUnifiedAPIService(db *sql.DB) *UnifiedAPIService {
 	return &UnifiedAPIService{
-		apiPeruKey:   apiPeruKey,
-		decolectaKey: decolectaKey,
+		db: db,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-// QueryDNI realiza la consulta externa intentando primero apiperu.dev y luego decolecta.com como fallback
+// loadProviders carga los proveedores activos desde la BD, ordenados por prioridad
+func (s *UnifiedAPIService) loadProviders() ([]providerConfig, error) {
+	rows, err := s.db.Query("SELECT provider_name, api_key, priority, is_active FROM provider_configs ORDER BY priority ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var providers []providerConfig
+	for rows.Next() {
+		var p providerConfig
+		if err := rows.Scan(&p.name, &p.apiKey, &p.priority, &p.isActive); err != nil {
+			continue
+		}
+		if p.isActive {
+			providers = append(providers, p)
+		}
+	}
+
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].priority < providers[j].priority
+	})
+	return providers, nil
+}
+
+// QueryDNI realiza la consulta DNI usando los proveedores activos en el orden de prioridad
 func (s *UnifiedAPIService) QueryDNI(ctx context.Context, dni string) (json.RawMessage, error) {
-	if s.apiPeruKey != "" {
-		data, err := s.queryApiPeru(ctx, "dni", dni)
-		if err == nil {
-			return data, nil
-		}
-		// Loguear error de apiperu.dev y continuar al fallback
-		fmt.Printf("apiperu.dev DNI error: %v, intentando fallback a decolecta.com\n", err)
+	providers, err := s.loadProviders()
+	if err != nil {
+		return nil, fmt.Errorf("error al cargar proveedores: %w", err)
+	}
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("ningún proveedor externo activo configurado")
 	}
 
-	if s.decolectaKey != "" {
-		data, err := s.queryDecolecta(ctx, "dni", dni)
-		if err == nil {
+	var lastErr error
+	for _, p := range providers {
+		var data json.RawMessage
+		var queryErr error
+		switch p.name {
+		case "apiperu":
+			data, queryErr = s.queryApiPeru(ctx, "dni", dni, p.apiKey)
+		case "decolecta":
+			data, queryErr = s.queryDecolecta(ctx, "dni", dni, p.apiKey)
+		default:
+			continue
+		}
+		if queryErr == nil {
 			return data, nil
 		}
-		return nil, fmt.Errorf("fallaron todas las APIs externas para DNI: %w", err)
+		fmt.Printf("[%s] DNI error (prioridad %d): %v, intentando siguiente...\n", p.name, p.priority, queryErr)
+		lastErr = queryErr
 	}
 
-	return nil, fmt.Errorf("ninguna API externa configurada para DNI")
+	return nil, fmt.Errorf("fallaron todos los proveedores para DNI: %w", lastErr)
 }
 
-// QueryRUC realiza la consulta externa intentando primero apiperu.dev y luego decolecta.com como fallback
+// QueryRUC realiza la consulta RUC usando los proveedores activos en el orden de prioridad
 func (s *UnifiedAPIService) QueryRUC(ctx context.Context, ruc string) (json.RawMessage, error) {
-	if s.apiPeruKey != "" {
-		data, err := s.queryApiPeru(ctx, "ruc", ruc)
-		if err == nil {
-			return data, nil
-		}
-		fmt.Printf("apiperu.dev RUC error: %v, intentando fallback a decolecta.com\n", err)
+	providers, err := s.loadProviders()
+	if err != nil {
+		return nil, fmt.Errorf("error al cargar proveedores: %w", err)
+	}
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("ningún proveedor externo activo configurado")
 	}
 
-	if s.decolectaKey != "" {
-		data, err := s.queryDecolecta(ctx, "ruc", ruc)
-		if err == nil {
+	var lastErr error
+	for _, p := range providers {
+		var data json.RawMessage
+		var queryErr error
+		switch p.name {
+		case "apiperu":
+			data, queryErr = s.queryApiPeru(ctx, "ruc", ruc, p.apiKey)
+		case "decolecta":
+			data, queryErr = s.queryDecolecta(ctx, "ruc", ruc, p.apiKey)
+		default:
+			continue
+		}
+		if queryErr == nil {
 			return data, nil
 		}
-		return nil, fmt.Errorf("fallaron todas las APIs externas para RUC: %w", err)
+		fmt.Printf("[%s] RUC error (prioridad %d): %v, intentando siguiente...\n", p.name, p.priority, queryErr)
+		lastErr = queryErr
 	}
 
-	return nil, fmt.Errorf("ninguna API externa configurada para RUC")
+	return nil, fmt.Errorf("fallaron todos los proveedores para RUC: %w", lastErr)
 }
 
-func (s *UnifiedAPIService) queryApiPeru(ctx context.Context, queryType, value string) (json.RawMessage, error) {
+func (s *UnifiedAPIService) queryApiPeru(ctx context.Context, queryType, value, apiKey string) (json.RawMessage, error) {
 	url := fmt.Sprintf("https://apiperu.dev/api/%s/%s", queryType, value)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+s.apiPeruKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -109,15 +162,14 @@ func (s *UnifiedAPIService) queryApiPeru(ctx context.Context, queryType, value s
 	return payload.Data, nil
 }
 
-func (s *UnifiedAPIService) queryDecolecta(ctx context.Context, queryType, value string) (json.RawMessage, error) {
-	// Adaptador estándar para decolecta.com (ejemplo de endpoint habitual)
+func (s *UnifiedAPIService) queryDecolecta(ctx context.Context, queryType, value, apiKey string) (json.RawMessage, error) {
 	url := fmt.Sprintf("https://decolecta.com/api/%s/%s", queryType, value)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+s.decolectaKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)

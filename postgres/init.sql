@@ -50,6 +50,30 @@ CREATE TABLE IF NOT EXISTS admins (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Panel de Administración: Dashboard (Rendimiento)
+CREATE VIEW dashboard_metrics AS
+SELECT
+    COUNT(*) as total_requests,
+    COUNT(CASE WHEN data_source = 'LOCAL_CACHE' THEN 1 END) as cache_hits,
+    AVG(response_time_ms) as avg_response_time_ms
+FROM api_logs;
+
+-- Configuración Dinámica de Proveedores Externos
+CREATE TABLE IF NOT EXISTS provider_configs (
+    provider_name VARCHAR(50) PRIMARY KEY,
+    api_key VARCHAR(255) NOT NULL,
+    priority INTEGER NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Proveedores por defecto
+INSERT INTO provider_configs (provider_name, api_key, priority, is_active)
+VALUES 
+    ('apiperu', 'CaK69kijSiBldmfX1ELWzOQ9x8imvrHNz82a0OzJKqS5lpEj6wHttYVVNegR', 1, TRUE),
+    ('decolecta', 'sk_15547.SnBtR5ZeI1nIw9Plku6yfa4PGohUaPQS', 2, TRUE)
+ON CONFLICT (provider_name) DO NOTHING;
+
 -- Índices de Rendimiento y Agregaciones del Dashboard
 CREATE INDEX IF NOT EXISTS idx_api_logs_tenant ON api_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_api_logs_source ON api_logs(data_source);

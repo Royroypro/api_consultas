@@ -63,7 +63,7 @@ func main() {
 	log.Println("✓ Conexión establecida con PostgreSQL (pool inicializado).")
 
 	// 3. Inicializar Servicios y Controladores
-	extService := service.NewUnifiedAPIService(cfg.ApiPeruKey, cfg.DecolectaKey)
+	extService := service.NewUnifiedAPIService(db)
 	queryHandler := handlers.NewQueryHandler(db, extService)
 	adminHandler := handlers.NewAdminHandler(db, cfg.JWTSecret)
 	authMiddleware := middleware.NewAuthMiddleware(db)
@@ -118,6 +118,17 @@ func main() {
 		}
 
 		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	// Rutas de Configuración de Proveedores Externos
+	mux.HandleFunc("/api/admin/providers", adminHandler.AuthenticateAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			adminHandler.GetProviders(w, r)
+		} else if r.Method == http.MethodPut {
+			adminHandler.UpdateProviders(w, r)
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	}))
 
 	// Servidor HTTP
