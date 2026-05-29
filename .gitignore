@@ -1,0 +1,20 @@
+# Entornos Virtuales y Credenciales
+*.env
+credenciales.env
+
+# Go
+/backend/api_consulta
+/backend/bin/
+
+# Dependencias
+node_modules/
+
+# OS
+.DS_Store
+
+# Archivos comprimidos de origen
+*.rar
+*.zip
+
+# Logs
+*.log

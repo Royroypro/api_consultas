@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # 1. Base de Datos PostgreSQL
+  api_consulta_bd_postgres:
+    image: postgres:15-alpine
+    container_name: api_consulta_bd_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api_consultas
+    volumes:
+      - api_consulta_pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - api_consulta_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d api_consultas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Core API en Go
+  api_consulta_api_go:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: api_consulta_api_go
+    restart: always
+    ports:
+      - "8091:8080"
+    volumes:
+      # Montar archivo de credenciales maestras de la ruta de windows para lectura nativa
+      - ./credenciales.env:/app/credenciales.env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@api_consulta_bd_postgres:5432/api_consultas?sslmode=disable
+      PORT: 8080
+      JWT_SECRET: super-secret-key-sehuacho-2026
+    depends_on:
+      api_consulta_bd_postgres:
+        condition: service_healthy
+    networks:
+      - api_consulta_net
+
+  # 3. Panel de Administración Frontend (Vue.js + Nginx)
+  api_consulta_frontend_vue:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: api_consulta_frontend_vue
+    restart: always
+    ports:
+      - "8090:80" # Escucha en el puerto host 8090
+    networks:
+      - api_consulta_net
+
+networks:
+  api_consulta_net:
+    name: api_consulta_net
+    driver: bridge
+
+volumes:
+  api_consulta_pgdata:
+    name: api_consulta_pgdata
