@@ -57,12 +57,12 @@ CREATE INDEX IF NOT EXISTS idx_api_logs_created ON api_logs(created_at);
 
 -- Inquilino Demo de Bootstrapping
 -- API Key original: 'tc_master_key_2026'
--- SHA-256 Hash: 'cf8d4c9f13886b45fcf54ee0d8d085959958cfb62e49c719e7cf881358ef9c71'
+-- SHA-256 Hash: '499208dba47c01f24bb63156c24103bc4768158f68815ffdb293f54d2e65eef7'
 INSERT INTO tenants (id, name, api_key_hash, is_active)
 VALUES (
     'a3b1c2d3-e4f5-6a7b-8c9d-0e1f2a3b4c5d',
     'Cliente Demo SaaS',
-    'cf8d4c9f13886b45fcf54ee0d8d085959958cfb62e49c719e7cf881358ef9c71',
+    '499208dba47c01f24bb63156c24103bc4768158f68815ffdb293f54d2e65eef7',
     TRUE
 ) ON CONFLICT (name) DO NOTHING;
 
