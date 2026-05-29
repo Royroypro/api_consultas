@@ -863,7 +863,16 @@ fmt.Println(string(body))
                 const providersSaving = ref(false);
                 const providersSaved = ref(false);
                 const snippetTab = ref('curl');
-                const playgroundForm = reactive({ type: 'dni', document: '', apiKey: 'tc_master_key_2026' });
+                const playgroundForm = reactive({ 
+                    type: 'dni', 
+                    document: '', 
+                    apiKey: localStorage.getItem('playground_api_key') || 'tc_master_key_2026' 
+                });
+
+                // Guardar la API Key en localStorage automáticamente cuando el usuario la cambie
+                watch(() => playgroundForm.apiKey, (newVal) => {
+                    localStorage.setItem('playground_api_key', newVal);
+                });
                 const playgroundResult = ref('');
                 const playgroundStatus = ref(null);
                 const playgroundLoading = ref(false);
