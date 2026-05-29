@@ -24,6 +24,16 @@ func NewQueryHandler(db *sql.DB, ext service.ExternalAPIService) *QueryHandler {
 	}
 }
 
+// getMergeMode consulta la BD para saber si el Modo Fusión está activo
+func (h *QueryHandler) getMergeMode() bool {
+	var val string
+	err := h.db.QueryRow("SELECT value FROM app_settings WHERE key = 'merge_mode'").Scan(&val)
+	if err != nil {
+		return false
+	}
+	return val == "true"
+}
+
 // HandleDNI procesa la consulta de DNI con caché y fallback
 func (h *QueryHandler) HandleDNI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -69,13 +79,19 @@ func (h *QueryHandler) HandleDNI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache Miss o expirado: Realizar Fallback a API Externa
-	externalData, err := h.externalService.QueryDNI(r.Context(), dni)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(fmt.Sprintf(`{"error": "No se pudo obtener información del DNI: %s"}`, err.Error())))
+	// Cache Miss o expirado: Realizar Fallback o Fusión según configuración
+	var externalData []byte
+	var fetchErr error
 
-		// Loguear error de API externa también como EXTERNAL_API
+	if h.getMergeMode() {
+		externalData, fetchErr = h.externalService.QueryDNIMerged(r.Context(), dni)
+	} else {
+		externalData, fetchErr = h.externalService.QueryDNI(r.Context(), dni)
+	}
+
+	if fetchErr != nil {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(fmt.Sprintf(`{"error": "No se pudo obtener información del DNI: %s"}`, fetchErr.Error())))
 		go h.logRequest(tenantID, "/api/dni/"+dni, time.Since(startTime), "EXTERNAL_API")
 		return
 	}
@@ -148,13 +164,19 @@ func (h *QueryHandler) HandleRUC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache Miss o expirado: Realizar Fallback a API Externa
-	externalData, err := h.externalService.QueryRUC(r.Context(), ruc)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(fmt.Sprintf(`{"error": "No se pudo obtener información del RUC: %s"}`, err.Error())))
+	// Cache Miss o expirado: Realizar Fallback o Fusión según configuración
+	var externalData []byte
+	var fetchErr error
 
-		// Loguear error
+	if h.getMergeMode() {
+		externalData, fetchErr = h.externalService.QueryRUCMerged(r.Context(), ruc)
+	} else {
+		externalData, fetchErr = h.externalService.QueryRUC(r.Context(), ruc)
+	}
+
+	if fetchErr != nil {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(fmt.Sprintf(`{"error": "No se pudo obtener información del RUC: %s"}`, fetchErr.Error())))
 		go h.logRequest(tenantID, "/api/ruc/"+ruc, time.Since(startTime), "EXTERNAL_API")
 		return
 	}

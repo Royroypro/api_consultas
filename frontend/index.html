@@ -641,6 +641,48 @@ fmt.Println(string(body))
                                     <p class="text-xs text-zinc-400 mt-1">Los cambios se aplican inmediatamente sin necesidad de reiniciar el servidor. El proveedor con menor número de prioridad se ejecuta primero (1 = primero).</p>
                                 </div>
                             </div>
+
+                            <!-- Toggle Modo Fusión -->
+                            <div class="glass-panel p-6 rounded-3xl border mb-6" :class="mergeMode ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-zinc-800'">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-12 h-12 rounded-2xl flex items-center justify-center" :class="mergeMode ? 'bg-emerald-500/20' : 'bg-zinc-800'">
+                                            <i data-lucide="git-merge" class="w-6 h-6" :class="mergeMode ? 'text-emerald-400' : 'text-zinc-500'"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-base font-bold text-white">Modo Fusión de Datos</h3>
+                                            <p class="text-xs mt-0.5" :class="mergeMode ? 'text-emerald-400' : 'text-zinc-500'">
+                                                {{ mergeMode ? '● ACTIVO — Ambas APIs se consultan en paralelo y sus datos se combinan' : '● INACTIVO — Se usa solo el proveedor de mayor prioridad (fallback)' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <button @click="saveMergeMode" :disabled="settingsSaving" class="px-4 py-2 text-xs font-bold rounded-xl transition-all disabled:opacity-50" :class="mergeMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-200'">
+                                            {{ settingsSaving ? '...' : 'Guardar' }}
+                                        </button>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" v-model="mergeMode" class="sr-only peer">
+                                            <div class="w-14 h-7 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-600 transition-all after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-full"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <p v-if="settingsSaved" class="text-xs text-emerald-400 mt-3">✓ Modo Fusión guardado y activo en tiempo real.</p>
+                                <div v-if="mergeMode" class="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-3 gap-3 text-center">
+                                    <div class="p-3 bg-dark-900 rounded-xl">
+                                        <p class="text-xs text-zinc-500">Campo único</p>
+                                        <p class="text-xs text-zinc-300 mt-1">Si ambas APIs coinciden → un solo campo</p>
+                                    </div>
+                                    <div class="p-3 bg-dark-900 rounded-xl">
+                                        <p class="text-xs text-zinc-500">Campo exclusivo</p>
+                                        <p class="text-xs text-zinc-300 mt-1">Si solo una API tiene el dato → se incluye</p>
+                                    </div>
+                                    <div class="p-3 bg-dark-900 rounded-xl">
+                                        <p class="text-xs text-zinc-500">Conflicto</p>
+                                        <p class="text-xs text-zinc-300 mt-1">Si difieren → campo_apiperu y campo_decolecta</p>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div v-for="(p, idx) in providers" :key="p.provider_name" class="glass-panel p-6 rounded-3xl border transition-all" :class="p.is_active ? 'border-violet-500/30' : 'border-zinc-800'">
                                     <div class="flex items-center justify-between mb-4">
@@ -814,6 +856,9 @@ fmt.Println(string(body))
                 const showCreateModal = ref(false);
                 const currentTab = ref('dashboard');
                 const providers = ref([]);
+                const mergeMode = ref(false);
+                const settingsSaving = ref(false);
+                const settingsSaved = ref(false);
                 const providersLoading = ref(false);
                 const providersSaving = ref(false);
                 const providersSaved = ref(false);
@@ -918,6 +963,7 @@ fmt.Println(string(body))
 
                 const fetchData = async () => {
                     fetchProviders();
+                    fetchSettings();
                     if (!isAuthenticated.value) return;
                     isLoading.value = true;
                     try {
@@ -1102,6 +1148,30 @@ fmt.Println(string(body))
                     nextTick(() => lucide.createIcons());
                 };
 
+                const fetchSettings = async () => {
+                    try {
+                        const res = await fetch(`${API_BASE}/api/admin/settings`, { headers: getAuthHeaders() });
+                        const data = await res.json();
+                        mergeMode.value = data.merge_mode === 'true';
+                    } catch(e) { console.error(e); }
+                };
+
+                const saveMergeMode = async () => {
+                    settingsSaving.value = true;
+                    settingsSaved.value = false;
+                    try {
+                        const res = await fetch(`${API_BASE}/api/admin/settings`, {
+                            method: 'PUT',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ merge_mode: mergeMode.value ? 'true' : 'false' })
+                        });
+                        if (!res.ok) throw new Error('Error al guardar');
+                        settingsSaved.value = true;
+                        setTimeout(() => settingsSaved.value = false, 3000);
+                    } catch(e) { alert('Error al guardar: ' + e.message); }
+                    finally { settingsSaving.value = false; }
+                };
+
                 const fetchProviders = async () => {
                     providersLoading.value = true;
                     try {
@@ -1201,6 +1271,11 @@ fmt.Println(string(body))
                     providersLoading,
                     providersSaving,
                     providersSaved,
+                    mergeMode,
+                    settingsSaving,
+                    settingsSaved,
+                    fetchSettings,
+                    saveMergeMode,
                     fetchProviders,
                     saveProviders,
                     executePlayground,

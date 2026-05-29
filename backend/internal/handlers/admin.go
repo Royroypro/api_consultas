@@ -464,7 +464,6 @@ func generateRandomAPIKey() (string, error) {
 
 func (h *AdminHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	rows, err := h.db.Query("SELECT provider_name, api_key, priority, is_active FROM provider_configs ORDER BY priority ASC")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -472,7 +471,6 @@ func (h *AdminHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-
 	var providers []map[string]interface{}
 	for rows.Next() {
 		var name, key string
@@ -496,27 +494,23 @@ func (h *AdminHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) UpdateProviders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	var reqs []struct {
 		ProviderName string `json:"provider_name"`
 		APIKey       string `json:"api_key"`
 		Priority     int    `json:"priority"`
 		IsActive     bool   `json:"is_active"`
 	}
-
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error": "Payload inválido"}`))
+		w.Write([]byte(`{"error": "Payload invalido"}`))
 		return
 	}
-
 	tx, err := h.db.Begin()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "Error al iniciar transacción"}`))
+		w.Write([]byte(`{"error": "Error al iniciar transaccion"}`))
 		return
 	}
-
 	for _, p := range reqs {
 		_, execErr := tx.Exec(
 			"UPDATE provider_configs SET api_key = $1, priority = $2, is_active = $3 WHERE provider_name = $4",
@@ -529,13 +523,53 @@ func (h *AdminHandler) UpdateProviders(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
 	if err := tx.Commit(); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "Error al guardar transacción"}`))
+		w.Write([]byte(`{"error": "Error al guardar transaccion"}`))
 		return
 	}
-
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "Proveedores actualizados"}`))
+}
+
+func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	rows, err := h.db.Query("SELECT key, value FROM app_settings")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Error al consultar configuracion"}`))
+		return
+	}
+	defer rows.Close()
+	settings := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err == nil {
+			settings[k] = v
+		}
+	}
+	json.NewEncoder(w).Encode(settings)
+}
+
+func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var payload map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Payload invalido"}`))
+		return
+	}
+	for k, v := range payload {
+		_, err := h.db.Exec(
+			"INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()",
+			k, v,
+		)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error": "Error al guardar configuracion"}`))
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "Configuracion guardada"}`))
 }

@@ -131,6 +131,17 @@ func main() {
 		}
 	}))
 
+	// Rutas de Configuración Global (Modo Fusión, etc.)
+	mux.HandleFunc("/api/admin/settings", adminHandler.AuthenticateAdmin(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			adminHandler.GetSettings(w, r)
+		} else if r.Method == http.MethodPut {
+			adminHandler.UpdateSettings(w, r)
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
 	// Servidor HTTP
 	serverAddr := ":" + cfg.Port
 	log.Printf("Microservicio listo y escuchando en el puerto %s...\n", cfg.Port)
