@@ -280,7 +280,14 @@ func (s *UnifiedAPIService) queryApiPeru(ctx context.Context, queryType, value, 
 }
 
 func (s *UnifiedAPIService) queryDecolecta(ctx context.Context, queryType, value, apiKey string) (json.RawMessage, error) {
-	url := fmt.Sprintf("https://decolecta.com/api/%s/%s", queryType, value)
+	var url string
+	if queryType == "dni" {
+		url = fmt.Sprintf("https://api.decolecta.com/v1/reniec/dni?numero=%s", value)
+	} else if queryType == "ruc" {
+		url = fmt.Sprintf("https://api.decolecta.com/v1/sunat/ruc/full?numero=%s", value)
+	} else {
+		return nil, fmt.Errorf("tipo de consulta no soportado para decolecta: %s", queryType)
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
