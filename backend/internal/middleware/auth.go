@@ -25,7 +25,33 @@ func NewAuthMiddleware(db *sql.DB) *AuthMiddleware {
 
 func (m *AuthMiddleware) Secure(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiKey := r.Header.Get("x-api-key")
+		// 1. Manejo de CORS Preflight (OPTIONS)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		rawApiKey := r.Header.Get("x-api-key")
+		// Limpiar posibles espacios en blanco o saltos de linea accidentales
+		importStrings := `import "strings"`
+		_ = importStrings
+		importLog := `import "log"`
+		_ = importLog
+		
+		// NOTA: Como replace_file_content no me deja añadir imports facilmente al tope del archivo si no lo reescribo, 
+		// usaré una funcion simple para trim (o reescribiré los imports)
+		// Mejor aún, simplemente lo leeremos y cortaremos
+		apiKey := rawApiKey
+		for len(apiKey) > 0 && (apiKey[0] == ' ' || apiKey[0] == '\n' || apiKey[0] == '\r' || apiKey[0] == '\t') {
+			apiKey = apiKey[1:]
+		}
+		for len(apiKey) > 0 && (apiKey[len(apiKey)-1] == ' ' || apiKey[len(apiKey)-1] == '\n' || apiKey[len(apiKey)-1] == '\r' || apiKey[len(apiKey)-1] == '\t') {
+			apiKey = apiKey[:len(apiKey)-1]
+		}
+
 		if apiKey == "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -47,6 +73,9 @@ func (m *AuthMiddleware) Secure(next http.Handler) http.Handler {
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			if err == sql.ErrNoRows {
+				// LOG DE DEBUG PARA VER QUE ENVIA EL USUARIO
+				println("ERROR API KEY INVALIDA: Recibida='", apiKey, "' Hash=", apiKeyHash)
+				
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error": "x-api-key inválida o no registrada"}`))
 				return
