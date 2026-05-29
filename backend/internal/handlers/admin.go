@@ -573,3 +573,122 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "Configuracion guardada"}`))
 }
+
+func (h *AdminHandler) ListCache(w http.ResponseWriter, r *http.Request, cacheType string) {
+	w.Header().Set("Content-Type", "application/json")
+	var tableName, idColumn string
+	if cacheType == "dni" {
+		tableName = "cache_personas"
+		idColumn = "dni"
+	} else if cacheType == "ruc" {
+		tableName = "cache_empresas"
+		idColumn = "ruc"
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Tipo de cache invalido"}`))
+		return
+	}
+
+	query := fmt.Sprintf("SELECT %s, data, updated_at FROM %s ORDER BY updated_at DESC LIMIT 100", idColumn, tableName)
+	rows, err := h.db.Query(query)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Error al consultar cache"}`))
+		return
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var id string
+		var dataBytes []byte
+		var updatedAt time.Time
+		if err := rows.Scan(&id, &dataBytes, &updatedAt); err != nil {
+			continue
+		}
+		var dataJSON interface{}
+		json.Unmarshal(dataBytes, &dataJSON)
+		
+		results = append(results, map[string]interface{}{
+			"id": id,
+			"data": dataJSON,
+			"updated_at": updatedAt.Format(time.RFC3339),
+		})
+	}
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	json.NewEncoder(w).Encode(results)
+}
+
+func (h *AdminHandler) UpdateCache(w http.ResponseWriter, r *http.Request, cacheType, id string) {
+	w.Header().Set("Content-Type", "application/json")
+	var tableName, idColumn string
+	if cacheType == "dni" {
+		tableName = "cache_personas"
+		idColumn = "dni"
+	} else if cacheType == "ruc" {
+		tableName = "cache_empresas"
+		idColumn = "ruc"
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Tipo de cache invalido"}`))
+		return
+	}
+
+	var payload interface{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Payload JSON invalido"}`))
+		return
+	}
+
+	dataBytes, _ := json.Marshal(payload)
+	query := fmt.Sprintf("UPDATE %s SET data = $1, updated_at = NOW() WHERE %s = $2", tableName, idColumn)
+	res, err := h.db.Exec(query, dataBytes, id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Error al actualizar cache"}`))
+		return
+	}
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Registro no encontrado"}`))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "Registro actualizado exitosamente"}`))
+}
+
+func (h *AdminHandler) DeleteCache(w http.ResponseWriter, r *http.Request, cacheType, id string) {
+	w.Header().Set("Content-Type", "application/json")
+	var tableName, idColumn string
+	if cacheType == "dni" {
+		tableName = "cache_personas"
+		idColumn = "dni"
+	} else if cacheType == "ruc" {
+		tableName = "cache_empresas"
+		idColumn = "ruc"
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "Tipo de cache invalido"}`))
+		return
+	}
+
+	query := fmt.Sprintf("DELETE FROM %s WHERE %s = $1", tableName, idColumn)
+	res, err := h.db.Exec(query, id)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "Error al eliminar de cache"}`))
+		return
+	}
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "Registro no encontrado"}`))
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "Registro eliminado exitosamente"}`))
+}

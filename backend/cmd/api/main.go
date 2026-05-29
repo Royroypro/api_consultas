@@ -142,6 +142,33 @@ func main() {
 		}
 	}))
 
+	// Rutas de Gestión de Caché
+	mux.HandleFunc("/api/admin/cache/", adminHandler.AuthenticateAdmin(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(r.URL.Path, "/")
+		// El path esperado es /api/admin/cache/{type} o /api/admin/cache/{type}/{id}
+		if len(parts) < 5 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error": "Path invalido"}`))
+			return
+		}
+
+		cacheType := parts[4]
+		var id string
+		if len(parts) == 6 {
+			id = parts[5]
+		}
+
+		if r.Method == http.MethodGet && id == "" {
+			adminHandler.ListCache(w, r, cacheType)
+		} else if r.Method == http.MethodPut && id != "" {
+			adminHandler.UpdateCache(w, r, cacheType, id)
+		} else if r.Method == http.MethodDelete && id != "" {
+			adminHandler.DeleteCache(w, r, cacheType, id)
+		} else {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+
 	// Servidor HTTP
 	serverAddr := ":" + cfg.Port
 	log.Printf("Microservicio listo y escuchando en el puerto %s...\n", cfg.Port)
